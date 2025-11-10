@@ -14,7 +14,8 @@
     "seed:down": "node src/scripts/seed.js down",
     "test:models": "node src/scripts/test-models.js",
     "verify:models": "node src/scripts/verify-models.js",
-    "test:neon": "node src/scripts/test-neon-connection.js"
+    "test:neon": "node src/scripts/test-neon-connection.js",
+    "test:redis": "node src/scripts/test-redis-services.js"
   },
   "keywords": [
     "authentication",
