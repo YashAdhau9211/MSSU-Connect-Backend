@@ -17,14 +17,15 @@ const config = {
     name: process.env.DB_NAME || 'mssu_connect',
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
-    dialect: 'postgres',
-    dialectOptions: {
+    dialect: process.env.DB_DIALECT || 'postgres',
+    storage: process.env.DB_STORAGE || null, // For SQLite
+    dialectOptions: process.env.DB_DIALECT === 'sqlite' ? {} : {
       ssl: process.env.DATABASE_URL ? {
         require: true,
         rejectUnauthorized: false, // Neon requires SSL
       } : false,
     },
-    pool: {
+    pool: process.env.DB_DIALECT === 'sqlite' ? undefined : {
       min: parseInt(process.env.DB_POOL_MIN || '10', 10),
       max: parseInt(process.env.DB_POOL_MAX || '100', 10),
       acquire: 30000,
