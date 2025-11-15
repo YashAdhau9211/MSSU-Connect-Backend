@@ -1,87 +1,76 @@
-import express from 'express';
-import cors from 'cors';
+import app from './app.js';
 import config from './src/config/env.js';
 import { initializeConnections, closeAllConnections } from './src/config/index.js';
+import { initSentry, flushSentry } from './src/config/sentry.js';
+import logger from './src/utils/logger.js';
 
-const app = express();
-
-// Middleware
-app.use(cors(config.cors));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Basic health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'Server is running',
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// Root endpoint
-app.get('/', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'MSSU Connect - Authentication & User Management API',
-    version: config.apiVersion,
-    environment: config.nodeEnv,
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: {
-      code: 'NOT_FOUND',
-      message: 'The requested resource was not found',
-    },
-  });
-});
-
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({
-    success: false,
-    error: {
-      code: 'INTERNAL_ERROR',
-      message: config.nodeEnv === 'development' ? err.message : 'Internal server error',
-    },
-  });
-});
+/**
+ * Server Startup File
+ * This file imports the Express app from app.js and starts the HTTP server.
+ * It handles:
+ * - Database connection initialization (PostgreSQL via Sequelize)
+ * - Redis connection initialization
+ * - HTTP server startup
+ * - Graceful shutdown handling (SIGTERM, SIGINT)
+ * - Server startup logging
+ */
 
 // Initialize server
 const startServer = async () => {
   try {
-    // Initialize database connections
+    console.log('Starting MSSU Connect Backend Server...');
+    console.log('='.repeat(50));
+    
+    // Initialize Sentry error monitoring (must be first)
+    initSentry(app);
+    
+    // Initialize database connections (PostgreSQL and Redis)
     await initializeConnections();
 
     // Start HTTP server
     const server = app.listen(config.port, () => {
+      console.log('✓ Database connections established');
       console.log('='.repeat(50));
       console.log(`🚀 Server running on port ${config.port}`);
       console.log(`📝 Environment: ${config.nodeEnv}`);
       console.log(`🔗 API Version: ${config.apiVersion}`);
       console.log(`🌐 URL: http://localhost:${config.port}`);
+      console.log(`📚 API Documentation: http://localhost:${config.port}/api/v1`);
+      console.log(`💚 Health Check: http://localhost:${config.port}/api/v1/health`);
       console.log('='.repeat(50));
+      console.log('✓ Server started successfully');
+      
+      // Log startup with Winston
+      logger.info('Server started successfully', {
+        port: config.port,
+        environment: config.nodeEnv,
+        apiVersion: config.apiVersion
+      });
     });
 
     // Graceful shutdown
     const gracefulShutdown = async (signal) => {
       console.log(`\n${signal} received. Starting graceful shutdown...`);
+      logger.info(`Graceful shutdown initiated`, { signal });
       
       server.close(async () => {
         console.log('HTTP server closed');
+        logger.info('HTTP server closed');
+        
+        // Flush Sentry events before closing
+        await flushSentry();
+        logger.info('Sentry events flushed');
+        
         await closeAllConnections();
         console.log('✓ Graceful shutdown completed');
+        logger.info('Graceful shutdown completed');
         process.exit(0);
       });
 
       // Force shutdown after 10 seconds
       setTimeout(() => {
         console.error('Forced shutdown after timeout');
+        logger.error('Forced shutdown after timeout');
         process.exit(1);
       }, 10000);
     };
@@ -91,12 +80,32 @@ const startServer = async () => {
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('='.repeat(50));
+    console.error('❌ Failed to start server');
+    console.error('Error:', error.message);
+    console.error('='.repeat(50));
+    
+    // Log error with Winston and Sentry
+    logger.error('Failed to start server', {
+      error: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      }
+    });
+    
+    // Flush Sentry events
+    await flushSentry();
+    
+    // Close any open connections before exiting
+    await closeAllConnections().catch(err => {
+      console.error('Error closing connections:', err.message);
+      logger.error('Error closing connections', { error: err.message });
+    });
+    
     process.exit(1);
   }
 };
 
 // Start the server
 startServer();
-
-export default app;

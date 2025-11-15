@@ -1,14 +1,30 @@
 import { sequelize } from '../config/database.js';
 import { Umzug, SequelizeStorage } from 'umzug';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const umzug = new Umzug({
   migrations: {
-    glob: path.join(__dirname, '../seeders/*.js'),
+    glob: ['../seeders/*.js', { cwd: __dirname }],
+    resolve: ({ name, path: filepath, context }) => {
+      // Convert Windows path to file:// URL for ESM compatibility
+      const fileUrl = pathToFileURL(filepath).href;
+      return {
+        name,
+        path: filepath,
+        up: async () => {
+          const migration = await import(fileUrl);
+          return migration.up(context, sequelize.Sequelize);
+        },
+        down: async () => {
+          const migration = await import(fileUrl);
+          return migration.down(context, sequelize.Sequelize);
+        },
+      };
+    },
   },
   context: sequelize.getQueryInterface(),
   storage: new SequelizeStorage({ 
